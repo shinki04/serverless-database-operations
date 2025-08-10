@@ -284,6 +284,7 @@ Resources:
         - !Ref ServerlessDBRDSSecurityGroup
       BackupRetentionPeriod: 7
       AutoMinorVersionUpgrade: true
+      DeleteAutomatedBackups: true
       Tags:
         - Key: Name
           Value: ServerlessDBRDSInstance
@@ -308,7 +309,7 @@ Resources:
       Auth:
         - AuthScheme: SECRETS
           SecretArn: !Ref ServerlessDBRDSSecret
-          IAMAuth: DISABLED
+          IAMAuth: REQUIRED
       RoleArn: !GetAtt ServerlessDBRDSProxyRole.Arn
       VpcSubnetIds:
         - !Ref ServerlessDBPrivateSubnet1
@@ -533,18 +534,27 @@ Resources:
       Timeout: 30
       Role: !GetAtt ServerlessDBLambdaCPUScalingRole.Arn
       CodeUri: cpu-scaler/
-      VpcConfig:
-        SubnetIds:
-          - !Ref ServerlessDBPrivateSubnet1
-          - !Ref ServerlessDBPrivateSubnet2
-          - !Ref ServerlessDBPrivateSubnet3
-        SecurityGroupIds:
-          - !Ref ServerlessDBLambdaSecurityGroup
+      # VpcConfig:
+      #   SubnetIds:
+      #     - !Ref ServerlessDBPrivateSubnet1
+      #     - !Ref ServerlessDBPrivateSubnet2
+      #     - !Ref ServerlessDBPrivateSubnet3
+      #   SecurityGroupIds:
+      #     - !Ref ServerlessDBLambdaSecurityGroup
       Events:
         SNSTrigger:
           Type: SNS
           Properties:
             Topic: !Ref ServerlessDBSNSTopic
+
+  # Lambda Function Permission
+  ServerlessDBCPUScalerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ServerlessDBCPUScalerLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !GetAtt ServerlessDBSNSTopic.Arn
 
   # Lambda Function for Create Table
   ServerlessDBCreateTableLambda:
