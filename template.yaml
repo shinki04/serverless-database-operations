@@ -341,8 +341,8 @@ Resources:
       Engine: valkey
       AccessString: 'on ~* +@all'
       Passwords:
-        - m@tkhauelasticcache123
-        - m@tkhauelasticcache456
+        - m@tkhauelasticache123
+        - m@tkhauelasticache456
 
   ServerlessDBValkeyUserGroup:
     Type: AWS::ElastiCache::UserGroup
@@ -583,7 +583,7 @@ Resources:
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticcache123
+          VALKEY_PASSWORD: m@tkhauelasticache123
       Events:
         Api:
           Type: Api
@@ -616,7 +616,7 @@ Resources:
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticcache123
+          VALKEY_PASSWORD: m@tkhauelasticache123
       Events:
         Api:
           Type: Api
@@ -649,7 +649,7 @@ Resources:
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticcache123
+          VALKEY_PASSWORD: m@tkhauelasticache123
       Events:
         GetApi:
           Type: Api
@@ -692,7 +692,7 @@ Resources:
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticcache123
+          VALKEY_PASSWORD: m@tkhauelasticache123
       Events:
         Api:
           Type: Api
