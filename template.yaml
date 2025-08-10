@@ -267,6 +267,7 @@ Resources:
   # RDS Instance
   ServerlessDBRDSInstance:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
     Properties:
       DBInstanceIdentifier: rdsmysql
       Engine: mysql
@@ -354,6 +355,7 @@ Resources:
   # ElastiCache (Valkey) Serverless
   ServerlessDBValkeyCache:
     Type: AWS::ElastiCache::ServerlessCache
+    DeletionPolicy: Delete
     Properties:
       CacheUsageLimits:
         DataStorage:
@@ -554,7 +556,7 @@ Resources:
       FunctionName: !GetAtt ServerlessDBCPUScalerLambda.Arn
       Action: lambda:InvokeFunction
       Principal: sns.amazonaws.com
-      SourceArn: !GetAtt ServerlessDBSNSTopic.Arn
+      SourceArn: !GetAtt ServerlessDBSNSTopic.TopicArn
 
   # Lambda Function for Create Table
   ServerlessDBCreateTableLambda:
