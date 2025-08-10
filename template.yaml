@@ -1,0 +1,710 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Database Operations with RDS Proxy, Lambda, ElastiCache, and Lambda Layer
+
+Resources:
+  # Common IAM Managed Policy for Lambda Functions
+  CommonLambdaPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ServerlessDB*:*
+          - Effect: Allow
+            Action:
+              - ec2:CreateNetworkInterface
+              - ec2:DeleteNetworkInterface
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSubnets
+              - ec2:DescribeVpcs
+            Resource: '*'
+
+  # Lambda Layer for Python dependencies
+  ServerlessDBPythonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: ServerlessDBPythonDependencies
+      Description: Python dependencies for Lambda functions (mysql-connector-python, redis, requests)
+      ContentUri: layer/
+      CompatibleRuntimes:
+        - python3.11
+      RetentionPolicy: Retain
+
+  # VPC Configuration
+  ServerlessDBVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: ServerlessDBVPC
+
+  # Private Subnets
+  ServerlessDBPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ServerlessDBVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: ap-southeast-1a
+      Tags:
+        - Key: Name
+          Value: RDS-Serverless-subnet-private1-ap-southeast-1a
+
+  ServerlessDBPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ServerlessDBVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: ap-southeast-1b
+      Tags:
+        - Key: Name
+          Value: RDS-Serverless-subnet-private2-ap-southeast-1b
+
+  ServerlessDBPrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ServerlessDBVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: ap-southeast-1c
+      Tags:
+        - Key: Name
+          Value: RDS-Serverless-subnet-private3-ap-southeast-1c
+
+  # Public Subnet
+  ServerlessDBPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ServerlessDBVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: ap-southeast-1a
+      Tags:
+        - Key: Name
+          Value: ServerlessDB-subnet-public-ap-southeast-1a
+
+  # Route Tables
+  ServerlessDBPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ServerlessDBVPC
+      Tags:
+        - Key: Name
+          Value: ServerlessDBPrivateRouteTable
+
+  ServerlessDBPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ServerlessDBVPC
+      Tags:
+        - Key: Name
+          Value: ServerlessDBPublicRouteTable
+
+  # Internet Gateway
+  ServerlessDBInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: ServerlessDBInternetGateway
+
+  ServerlessDBVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ServerlessDBVPC
+      InternetGatewayId: !Ref ServerlessDBInternetGateway
+
+  # Route for Public Subnet
+  ServerlessDBPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref ServerlessDBPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref ServerlessDBInternetGateway
+
+  # Subnet Associations
+  ServerlessDBPrivateSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ServerlessDBPrivateSubnet1
+      RouteTableId: !Ref ServerlessDBPrivateRouteTable
+
+  ServerlessDBPrivateSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ServerlessDBPrivateSubnet2
+      RouteTableId: !Ref ServerlessDBPrivateRouteTable
+
+  ServerlessDBPrivateSubnet3Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ServerlessDBPrivateSubnet3
+      RouteTableId: !Ref ServerlessDBPrivateRouteTable
+
+  ServerlessDBPublicSubnetAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ServerlessDBPublicSubnet
+      RouteTableId: !Ref ServerlessDBPublicRouteTable
+
+  # Security Groups
+  ServerlessDBRDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS
+      VpcId: !Ref ServerlessDBVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref ServerlessDBRDSProxySecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: rds-security-group
+
+  ServerlessDBCacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ElastiCache
+      VpcId: !Ref ServerlessDBVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: cache-security-group
+
+  ServerlessDBLambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda
+      VpcId: !Ref ServerlessDBVPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: lambda-security-group
+
+  ServerlessDBSecretsEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Secrets Manager Endpoint
+      VpcId: !Ref ServerlessDBVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Secret-Endpoint-SG
+
+  ServerlessDBRDSProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS Proxy
+      VpcId: !Ref ServerlessDBVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: rds-proxy-security-group
+
+  # Secrets Manager Endpoint
+  ServerlessDBSecretsManagerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
+      VpcId: !Ref ServerlessDBVPC
+      SubnetIds:
+        - !Ref ServerlessDBPrivateSubnet1
+        - !Ref ServerlessDBPrivateSubnet2
+        - !Ref ServerlessDBPrivateSubnet3
+      SecurityGroupIds:
+        - !Ref ServerlessDBSecretsEndpointSecurityGroup
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+
+  # RDS Subnet Group
+  ServerlessDBRDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref ServerlessDBPrivateSubnet1
+        - !Ref ServerlessDBPrivateSubnet2
+        - !Ref ServerlessDBPrivateSubnet3
+      Tags:
+        - Key: Name
+          Value: ServerlessDBRDSSubnetGroup
+
+  # RDS Instance
+  ServerlessDBRDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: rdsmysql
+      Engine: mysql
+      EngineVersion: 8.0.42
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      StorageType: gp3
+      MaxAllocatedStorage: 1000
+      MasterUsername: admin
+      MasterUserPassword: xinchaothegioi123
+      DBName: shopdemo
+      MultiAZ: true
+      DBSubnetGroupName: !Ref ServerlessDBRDSSubnetGroup
+      VPCSecurityGroups:
+        - !Ref ServerlessDBRDSSecurityGroup
+      BackupRetentionPeriod: 7
+      EnablePerformanceInsights: true
+      AutoMinorVersionUpgrade: true
+      Tags:
+        - Key: Name
+          Value: ServerlessDBRDSInstance
+
+  # Secrets Manager Secret
+  ServerlessDBRDSSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: rds-proxy-secret
+      Description: Credentials for RDS database
+      SecretString: !Sub '{"username":"admin","password":"xinchaothegioi123","host":"${ServerlessDBRDSInstance.Endpoint.Address}","port":3306,"dbname":"shopdemo"}'
+      Tags:
+        - Key: Name
+          Value: ServerlessDBRDSSecret
+
+  # RDS Proxy
+  ServerlessDBRDSProxy:
+    Type: AWS::RDS::DBProxy
+    Properties:
+      DBProxyName: ServerlessDBRDSProxy
+      EngineFamily: MYSQL
+      Auth:
+        - AuthScheme: SECRETS
+          SecretArn: !Ref ServerlessDBRDSSecret
+          IAMAuth: DISABLED
+      RoleArn: !GetAtt ServerlessDBRDSProxyRole.Arn
+      VpcSubnetIds:
+        - !Ref ServerlessDBPrivateSubnet1
+        - !Ref ServerlessDBPrivateSubnet2
+        - !Ref ServerlessDBPrivateSubnet3
+      VpcSecurityGroupIds:
+        - !Ref ServerlessDBRDSProxySecurityGroup
+      IdleClientTimeout: 60
+      RequireTLS: true
+      DebugLogging: true
+
+  ServerlessDBRDSProxyTargetGroup:
+    Type: AWS::RDS::DBProxyTargetGroup
+    Properties:
+      DBProxyName: !Ref ServerlessDBRDSProxy
+      TargetGroupName: default
+      DBInstanceIdentifiers:
+        - !Ref ServerlessDBRDSInstance
+      ConnectionPoolConfigurationInfo:
+        MaxConnectionsPercent: 100
+
+  # ElastiCache (Valkey) User and User Group
+  ServerlessDBValkeyUser:
+    Type: AWS::ElastiCache::User
+    Properties:
+      UserId: valkey-user
+      UserName: valkey-user
+      Engine: valkey
+      AccessString: 'on ~* +@all'
+      Passwords:
+        - m@tkhauelasticcache123
+        - m@tkhauelasticcache456
+
+  ServerlessDBValkeyUserGroup:
+    Type: AWS::ElastiCache::UserGroup
+    Properties:
+      UserGroupId: valkey-user-group
+      Engine: valkey
+      UserIds:
+        - !Ref ServerlessDBValkeyUser
+
+  # ElastiCache (Valkey) Serverless
+  ServerlessDBValkeyCache:
+    Type: AWS::ElastiCache::ServerlessCache
+    Properties:
+      CacheUsageLimits:
+        DataStorage:
+          Maximum: 100
+          Minimum: 0
+          Unit: GB
+        ECPUPerSecond:
+          Maximum: 100000
+      UserGroupId: !Ref ServerlessDBValkeyUserGroup
+      Engine: valkey
+      ServerlessCacheName: ServerlessDBValkeyCache
+      SubnetIds:
+        - !Ref ServerlessDBPrivateSubnet1
+        - !Ref ServerlessDBPrivateSubnet2
+        - !Ref ServerlessDBPrivateSubnet3
+      SecurityGroupIds:
+        - !Ref ServerlessDBCacheSecurityGroup
+      DailySnapshotTime: '00:00'
+      SnapshotRetentionLimit: 7
+      Tags:
+        - Key: Name
+          Value: ServerlessDBValkeyCache
+
+  # IAM Roles and Policies
+  ServerlessDBRDSProxyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RDSSecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: GetSecretValue
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetResourcePolicy
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecretVersionIds
+                Resource: !Ref ServerlessDBRDSSecret
+              - Sid: DecryptSecretValue
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*
+
+  ServerlessDBLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref CommonLambdaPolicy
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: elasticache:Connect
+                Resource:
+                  - !Sub arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:ServerlessDBValkeyCache
+                  - !Sub arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:user:*
+              - Effect: Allow
+                Action: rds-db:connect
+                Resource: !Sub arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:prx-0c964854e8e3e1f33/*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ServerlessDBRDSSecret
+              - Effect: Allow
+                Action: vpce:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - execute-api:Invoke
+                  - execute-api:ManageConnections
+                Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*
+
+  ServerlessDBLambdaCPUScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref CommonLambdaPolicy
+      Policies:
+        - PolicyName: CPUScalingPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBInstances
+                  - rds:ModifyDBInstance
+                Resource: !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:rdsmysql
+              - Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:PutMetricAlarm
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:ListSubscriptionsByTopic
+                Resource: !Ref ServerlessDBSNSTopic
+
+  # SNS Topic for CPU Scaling
+  ServerlessDBSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: ServerlessDBSNSCPUScaler
+      Tags:
+        - Key: Name
+          Value: ServerlessDBSNSTopic
+
+  # CloudWatch Alarms
+  ServerlessDBCPUHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ServerlessDBCPUHighAlarm
+      AlarmDescription: Alarm when CPU exceeds 60%
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 60.0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: rdsmysql
+      AlarmActions:
+        - !Ref ServerlessDBSNSTopic
+
+  ServerlessDBCPULowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ServerlessDBCPULowAlarm
+      AlarmDescription: Alarm when CPU is below 60%
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 60.0
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: rdsmysql
+      AlarmActions:
+        - !Ref ServerlessDBSNSTopic
+
+  # Lambda Function for CPU Scaling
+  ServerlessDBCPUScalerLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessDBCPUScaler
+      Handler: index.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Role: !GetAtt ServerlessDBLambdaCPUScalingRole.Arn
+      CodeUri: cpu-scaler/
+      VpcConfig:
+        SubnetIds:
+          - !Ref ServerlessDBPrivateSubnet1
+          - !Ref ServerlessDBPrivateSubnet2
+          - !Ref ServerlessDBPrivateSubnet3
+        SecurityGroupIds:
+          - !Ref ServerlessDBLambdaSecurityGroup
+      Events:
+        SNSTrigger:
+          Type: SNS
+          Properties:
+            Topic: !Ref ServerlessDBSNSTopic
+
+  # Lambda Function for Create Table
+  ServerlessDBCreateTableLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessDBCreateTable
+      Handler: index.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Role: !GetAtt ServerlessDBLambdaExecutionRole.Arn
+      CodeUri: create-table/
+      Layers:
+        - !Ref ServerlessDBPythonLayer
+      VpcConfig:
+        SubnetIds:
+          - !Ref ServerlessDBPrivateSubnet1
+          - !Ref ServerlessDBPrivateSubnet2
+          - !Ref ServerlessDBPrivateSubnet3
+        SecurityGroupIds:
+          - !Ref ServerlessDBLambdaSecurityGroup
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
+          VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
+          VALKEY_USER_NAME: valkey-user
+          VALKEY_PASSWORD: m@tkhauelasticcache123
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /create-table
+            Method: POST
+
+  # Lambda Function for Insert Bulk Orders
+  ServerlessDBInsertBulkOrdersLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessDBInsertBulkOrders
+      Handler: index.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Role: !GetAtt ServerlessDBLambdaExecutionRole.Arn
+      CodeUri: insert-bulk/
+      Layers:
+        - !Ref ServerlessDBPythonLayer
+      VpcConfig:
+        SubnetIds:
+          - !Ref ServerlessDBPrivateSubnet1
+          - !Ref ServerlessDBPrivateSubnet2
+          - !Ref ServerlessDBPrivateSubnet3
+        SecurityGroupIds:
+          - !Ref ServerlessDBLambdaSecurityGroup
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
+          VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
+          VALKEY_USER_NAME: valkey-user
+          VALKEY_PASSWORD: m@tkhauelasticcache123
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /insert-bulk
+            Method: POST
+
+  # Lambda Function for CRUD Operations
+  ServerlessDBCRUDOperationsLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessDBCRUDOperations
+      Handler: index.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Role: !GetAtt ServerlessDBLambdaExecutionRole.Arn
+      CodeUri: crud-operations/
+      Layers:
+        - !Ref ServerlessDBPythonLayer
+      VpcConfig:
+        SubnetIds:
+          - !Ref ServerlessDBPrivateSubnet1
+          - !Ref ServerlessDBPrivateSubnet2
+          - !Ref ServerlessDBPrivateSubnet3
+        SecurityGroupIds:
+          - !Ref ServerlessDBLambdaSecurityGroup
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
+          VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
+          VALKEY_USER_NAME: valkey-user
+          VALKEY_PASSWORD: m@tkhauelasticcache123
+      Events:
+        GetApi:
+          Type: Api
+          Properties:
+            Path: /orders
+            Method: GET
+        PostApi:
+          Type: Api
+          Properties:
+            Path: /orders
+            Method: POST
+        DeleteApi:
+          Type: Api
+          Properties:
+            Path: /orders
+            Method: DELETE
+
+  # Lambda Function for Query Operations
+  ServerlessDBQueryOperationsLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessDBQueryOperations
+      Handler: index.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Role: !GetAtt ServerlessDBLambdaExecutionRole.Arn
+      CodeUri: query-operations/
+      Layers:
+        - !Ref ServerlessDBPythonLayer
+      VpcConfig:
+        SubnetIds:
+          - !Ref ServerlessDBPrivateSubnet1
+          - !Ref ServerlessDBPrivateSubnet2
+          - !Ref ServerlessDBPrivateSubnet3
+        SecurityGroupIds:
+          - !Ref ServerlessDBLambdaSecurityGroup
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
+          VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
+          VALKEY_USER_NAME: valkey-user
+          VALKEY_PASSWORD: m@tkhauelasticcache123
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /orders/query
+            Method: GET
+
+Outputs:
+  ServerlessDBApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
+  ServerlessDBRDSEndpoint:
+    Description: RDS Instance Endpoint
+    Value: !GetAtt ServerlessDBRDSInstance.Endpoint.Address
+  ServerlessDBRDSProxyEndpoint:
+    Description: RDS Proxy Endpoint
+    Value: !GetAtt ServerlessDBRDSProxy.Endpoint
+  ServerlessDBValkeyEndpoint:
+    Description: Valkey Cache Endpoint
+    Value: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
+  ServerlessDBRDSSecretArn:
+    Description: Secrets Manager Secret ARN
+    Value: !Ref ServerlessDBRDSSecret
+  ServerlessDBPythonLayerArn:
+    Description: ARN of the Python Lambda Layer
+    Value: !Ref ServerlessDBPythonLayer
