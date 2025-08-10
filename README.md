@@ -22,7 +22,12 @@ pip install -t layer requests mysql-connector-python redis
 ## 2. Triển khai với AWS SAM
 
 Sau khi cài đặt thư viện và cấu hình dự án, thực hiện triển khai bằng lệnh:
-
+```
+sam build
+```
+```
+sam validate
+```
 ```
 sam deploy \
   --stack-name ServerlessDatabaseOperations \

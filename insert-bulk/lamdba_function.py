@@ -24,52 +24,48 @@ except redis.RedisError as e:
     logger.error(f"Failed to initialize Valkey connection: {e}")
     raise
 
-_secret_cache = None
+# Biến toàn cục để lưu token và thời gian hết hạn
+cached_token = None
+token_expiry = 0
 
-def get_secret():
-    global _secret_cache
-    if _secret_cache is not None:
-        logger.info("Using cached secret")
-        return _secret_cache
+def get_db_token():
+    global cached_token, token_expiry
+    current_time = time.time()
 
-    try:
-        secret_arn = os.environ.get('SECRET_ARN')
-        if not secret_arn:
-            raise Exception("SECRET_ARN environment variable not set")
+    # Kiểm tra nếu token còn hợp lệ (giả sử TTL là 840 giây để có buffer 60 giây trước khi hết hạn)
+    if cached_token and current_time < token_expiry:
+        return cached_token
 
-        secrets_extension_endpoint = f"http://localhost:2773/secretsmanager/get?secretId={secret_arn}"
-        headers = {"X-Aws-Parameters-Secrets-Token": os.environ.get('AWS_SESSION_TOKEN')}
-        
-        response = requests.get(secrets_extension_endpoint, headers=headers, timeout=10)
-        if response.status_code != 200:
-            raise Exception(f"Failed to retrieve secret, status code: {response.status_code}, response: {response.text}")
-        
-        secret_dict = json.loads(response.text).get("SecretString")
-        if not secret_dict:
-            raise Exception("SecretString not found in response")
-        
-        _secret_cache = json.loads(secret_dict)
-        logger.info("Secret retrieved and cached")
-        return _secret_cache
-    except requests.RequestException as e:
-        logger.error(f"Network error retrieving secret: {str(e)}")
-        raise
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error for secret: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving secret: {str(e)}")
-        raise
+    # Tạo token mới
+    rds_client = boto3.client('rds')
+    cached_token = rds_client.generate_db_auth_token(
+        DBHostname=os.environ['PROXY_ENDPOINT'],
+        Port=3306,
+        DBUsername=os.environ['DB_USER'],
+        Region=os.environ['AWS_REGION']
+    )
+    # Cập nhật thời gian hết hạn (15 phút = 900 giây, trừ 60 giây để an toàn)
+    token_expiry = current_time + 840
+    return cached_token
+
 
 def get_db_connection():
+    """Establish a MySQL database connection via RDS Proxy."""
     try:
-        secret_dict = get_secret()
+        db_token = get_db_token()
+        # secret_dict = get_secret()
         return mysql.connector.connect(
-            host=os.environ.get('PROXY_ENDPOINT'),
-            user=secret_dict['username'],
-            password=secret_dict['password'],
-            database=secret_dict['dbname'],
-            port=int(secret_dict['port']),
+            # host=os.environ.get('PROXY_ENDPOINT'),
+            # user=secret_dict['username'],
+            # password=secret_dict['password'],
+            # database=secret_dict['dbname'],
+            # port=int(secret_dict['port']),
+            # connection_timeout=10
+            host=os.environ['PROXY_ENDPOINT'],
+            port=3306,
+            user=os.environ['DB_USER'],
+            password=db_token,
+            database=os.environ['DB_NAME'],
             connection_timeout=10
         )
     except mysql.connector.Error as e:

@@ -283,7 +283,6 @@ Resources:
       VPCSecurityGroups:
         - !Ref ServerlessDBRDSSecurityGroup
       BackupRetentionPeriod: 7
-      EnablePerformanceInsights: true
       AutoMinorVersionUpgrade: true
       Tags:
         - Key: Name
