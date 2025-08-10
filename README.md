@@ -25,6 +25,9 @@ serverless-database-operations/
 ├── query-operations/
 │   └── index.py
 ├── template.yaml
+├── requirements.txt
+├── .gitingore
+
 ```
 Chạy lệnh sau trong terminal:
 
