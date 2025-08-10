@@ -56,6 +56,11 @@ sam build
 ```
 sam validate
 ```
+> ## Khuyến nghị
+>```
+>sam deploy --guided 
+>```
+Hoặc 
 ```
 sam deploy \
   --stack-name ServerlessDatabaseOperations \
