@@ -1,6 +1,63 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: Serverless Database Operations with RDS Proxy, Lambda, ElastiCache, and Lambda Layer
+
+Parameters:
+  DBInstanceIdentifierName:
+    Type: String
+    Description: The name (DB Instance Identifier) of the RDS instance.
+    Default: rdsmysql
+    MinLength: 5
+
+  MasterUsernameDB:
+    Type: String
+    Description: Master username for db instance
+    Default: admin
+
+  MasterUserPasswordDB:
+    NoEcho: true
+    Type: String
+    Description: Master passwork for db instance
+    Default: xinchaothegioi123
+    MinLength: 1
+
+  DBNameInit:
+    Type: String
+    Description: Database name init
+    Default: shopdemo
+    MinLength: 1
+
+  UserNameValkey:
+    Type: String
+    Description: Username for Valkey
+    Default: valkey-user
+    MinLength: 1
+
+  PasswordsValkey1:
+    NoEcho: true
+    Type: String
+    Description: Passwork for Valkey Cache
+    Default: m@tkhauelasticache123
+    MinLength: 1
+
+  PasswordsValkey2:
+    NoEcho: true
+    Type: String
+    Description: Passwork for Valkey Cache 2
+    Default: m@tkhauelasticache456
+    MinLength: 1
+
+  UserGroupIdValkeyCache:
+    Type: String
+    Description: UserGroupId for Valkey
+    Default: valkey-user-group
+    MinLength: 1
+
+  ServerlessDBValkeyCacheName:
+    Type: String
+    Description: ServerlessCacheName for Valkey
+    Default: ServerlessDBValkeyCache
+    MinLength: 1
 
 Resources:
   # Common IAM Managed Policy for Lambda Functions
@@ -8,7 +65,7 @@ Resources:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       PolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Action:
@@ -25,7 +82,7 @@ Resources:
               - ec2:DescribeSecurityGroups
               - ec2:DescribeSubnets
               - ec2:DescribeVpcs
-            Resource: '*'
+            Resource: "*"
 
   # Lambda Layer for Python dependencies
   ServerlessDBPythonLayer:
@@ -202,22 +259,22 @@ Resources:
         - Key: Name
           Value: lambda-security-group
 
-  ServerlessDBSecretsEndpointSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for Secrets Manager Endpoint
-      VpcId: !Ref ServerlessDBVPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: Secret-Endpoint-SG
+  # ServerlessDBSecretsEndpointSecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     GroupDescription: Security group for Secrets Manager Endpoint
+  #     VpcId: !Ref ServerlessDBVPC
+  #     SecurityGroupIngress:
+  #       - IpProtocol: tcp
+  #         FromPort: 443
+  #         ToPort: 443
+  #         SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
+  #     SecurityGroupEgress:
+  #       - IpProtocol: -1
+  #         CidrIp: 0.0.0.0/0
+  #     Tags:
+  #       - Key: Name
+  #         Value: Secret-Endpoint-SG
 
   ServerlessDBRDSProxySecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -232,24 +289,34 @@ Resources:
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
+        # 1. Cho phép đi tới RDS Proxy
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          DestinationSecurityGroupId: !Ref ServerlessDBRDSProxySecurityGroup
+        # 2. Cho phép đi tới ElastiCache
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          DestinationSecurityGroupId: !Ref ServerlessDBCacheSecurityGroup
       Tags:
         - Key: Name
           Value: rds-proxy-security-group
 
-  # Secrets Manager Endpoint
-  ServerlessDBSecretsManagerEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
-      VpcId: !Ref ServerlessDBVPC
-      SubnetIds:
-        - !Ref ServerlessDBPrivateSubnet1
-        - !Ref ServerlessDBPrivateSubnet2
-        - !Ref ServerlessDBPrivateSubnet3
-      SecurityGroupIds:
-        - !Ref ServerlessDBSecretsEndpointSecurityGroup
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
+  # # Secrets Manager Endpoint
+  # ServerlessDBSecretsManagerEndpoint:
+  #   Type: AWS::EC2::VPCEndpoint
+  #   Properties:
+  #     ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
+  #     VpcId: !Ref ServerlessDBVPC
+  #     SubnetIds:
+  #       - !Ref ServerlessDBPrivateSubnet1
+  #       - !Ref ServerlessDBPrivateSubnet2
+  #       - !Ref ServerlessDBPrivateSubnet3
+  #     SecurityGroupIds:
+  #       - !Ref ServerlessDBSecretsEndpointSecurityGroup
+  #     VpcEndpointType: Interface
+  #     PrivateDnsEnabled: true
 
   # RDS Subnet Group
   ServerlessDBRDSSubnetGroup:
@@ -269,16 +336,16 @@ Resources:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Delete
     Properties:
-      DBInstanceIdentifier: rdsmysql
+      DBInstanceIdentifier: !Ref DBInstanceIdentifierName
       Engine: mysql
       EngineVersion: 8.0.42
       DBInstanceClass: db.t3.micro
       AllocatedStorage: 20
       StorageType: gp3
       MaxAllocatedStorage: 1000
-      MasterUsername: admin
-      MasterUserPassword: xinchaothegioi123
-      DBName: shopdemo
+      MasterUsername: !Ref MasterUsernameDB
+      MasterUserPassword: !Ref MasterUserPasswordDB
+      DBName: !Ref DBNameInit
       MultiAZ: true
       DBSubnetGroupName: !Ref ServerlessDBRDSSubnetGroup
       VPCSecurityGroups:
@@ -296,7 +363,7 @@ Resources:
     Properties:
       Name: rds-proxy-secret
       Description: Credentials for RDS database
-      SecretString: !Sub '{"username":"admin","password":"xinchaothegioi123","host":"${ServerlessDBRDSInstance.Endpoint.Address}","port":3306,"dbname":"shopdemo"}'
+      SecretString: !Sub '{"username":"${MasterUsernameDB}","password":"${MasterUserPasswordDB}","host":"${ServerlessDBRDSInstance.Endpoint.Address}","port":3306,"dbname":"${DBNameInit}"}'
       Tags:
         - Key: Name
           Value: ServerlessDBRDSSecret
@@ -305,7 +372,7 @@ Resources:
   ServerlessDBRDSProxy:
     Type: AWS::RDS::DBProxy
     Properties:
-      DBProxyName: ServerlessDBRDSProxy
+      DBProxyName: !Ref ProxyName
       EngineFamily: MYSQL
       Auth:
         - AuthScheme: SECRETS
@@ -336,18 +403,18 @@ Resources:
   ServerlessDBValkeyUser:
     Type: AWS::ElastiCache::User
     Properties:
-      UserId: valkey-user
-      UserName: valkey-user
+      UserId: !Ref UserNameValkey
+      UserName: !Ref UserNameValkey
       Engine: valkey
-      AccessString: 'on ~* +@all'
+      AccessString: "on ~* +@all"
       Passwords:
-        - m@tkhauelasticache123
-        - m@tkhauelasticache456
+        - !Ref PasswordsValkey1
+        - !Ref PasswordsValkey2
 
   ServerlessDBValkeyUserGroup:
     Type: AWS::ElastiCache::UserGroup
     Properties:
-      UserGroupId: valkey-user-group
+      UserGroupId: !Ref UserGroupIdValkeyCache
       Engine: valkey
       UserIds:
         - !Ref ServerlessDBValkeyUser
@@ -366,14 +433,14 @@ Resources:
           Maximum: 100000
       UserGroupId: !Ref ServerlessDBValkeyUserGroup
       Engine: valkey
-      ServerlessCacheName: ServerlessDBValkeyCache
+      ServerlessCacheName: !Ref ServerlessDBValkeyCacheName
       SubnetIds:
         - !Ref ServerlessDBPrivateSubnet1
         - !Ref ServerlessDBPrivateSubnet2
         - !Ref ServerlessDBPrivateSubnet3
       SecurityGroupIds:
         - !Ref ServerlessDBCacheSecurityGroup
-      DailySnapshotTime: '00:00'
+      DailySnapshotTime: "00:00"
       SnapshotRetentionLimit: 7
       Tags:
         - Key: Name
@@ -384,7 +451,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -393,7 +460,7 @@ Resources:
       Policies:
         - PolicyName: RDSSecretsAccess
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Sid: GetSecretValue
                 Effect: Allow
@@ -412,7 +479,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -423,22 +490,28 @@ Resources:
       Policies:
         - PolicyName: LambdaExecutionPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: elasticache:Connect
                 Resource:
-                  - !Sub arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:ServerlessDBValkeyCache
+                  - !Sub arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:${ServerlessDBValkeyCacheName}
                   - !Sub arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:user:*
               - Effect: Allow
                 Action: rds-db:connect
-                Resource: !Sub arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:prx-0c964854e8e3e1f33/*
+                Resource: !Sub
+                  - "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:${ProxyResourceId}/*"
+                  - ProxyResourceId:
+                      !Select [
+                        6,
+                        !Split [":", !GetAtt ServerlessDBRDSProxy.DBProxyArn],
+                      ]
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref ServerlessDBRDSSecret
               - Effect: Allow
                 Action: vpce:*
-                Resource: '*'
+                Resource: "*"
               - Effect: Allow
                 Action:
                   - execute-api:Invoke
@@ -449,7 +522,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -460,18 +533,18 @@ Resources:
       Policies:
         - PolicyName: CPUScalingPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
                   - rds:DescribeDBInstances
                   - rds:ModifyDBInstance
-                Resource: !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:rdsmysql
+                Resource: !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${DBInstanceIdentifierName}
               - Effect: Allow
                 Action:
                   - cloudwatch:DescribeAlarms
                   - cloudwatch:PutMetricAlarm
-                Resource: '*'
+                Resource: "*"
               - Effect: Allow
                 Action:
                   - sns:Publish
@@ -579,11 +652,13 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
-          VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticache123
+          VALKEY_USER_NAME: !Ref UserNameValkey
+          VALKEY_PASSWORD: !Ref PasswordsValkey1
+          DB_NAME: !Ref DBNameInit
+          DB_USER: !Ref MasterUsernameDB
       Events:
         Api:
           Type: Api
@@ -612,11 +687,13 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
-          VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticache123
+          VALKEY_USER_NAME: !Ref UserNameValkey
+          VALKEY_PASSWORD: !Ref PasswordsValkey1
+          DB_NAME: !Ref DBNameInit
+          DB_USER: !Ref MasterUsernameDB
       Events:
         Api:
           Type: Api
@@ -645,11 +722,13 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
-          VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticache123
+          VALKEY_USER_NAME: !Ref UserNameValkey
+          VALKEY_PASSWORD: !Ref PasswordsValkey1
+          DB_NAME: !Ref DBNameInit
+          DB_USER: !Ref MasterUsernameDB
       Events:
         GetApi:
           Type: Api
@@ -688,11 +767,13 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          SECRET_ARN: !Ref ServerlessDBRDSSecret
+          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
-          VALKEY_USER_NAME: valkey-user
-          VALKEY_PASSWORD: m@tkhauelasticache123
+          VALKEY_USER_NAME: !Ref UserNameValkey
+          VALKEY_PASSWORD: !Ref PasswordsValkey1
+          DB_NAME: !Ref DBNameInit
+          DB_USER: !Ref MasterUsernameDB
       Events:
         Api:
           Type: Api
