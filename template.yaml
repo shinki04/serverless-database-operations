@@ -65,6 +65,11 @@ Parameters:
     Default: ServerlessDBProxy
     MinLength: 1
 
+  INSTANCE_TYPES_VARIABLE:
+    Type: String
+    Description: A list of allowed instance types, separated by commas.
+    default: db.t3.micro,db.t4g.micro,db.t4g.medium,db.m5.large 
+    
 Resources:
   # Common IAM Managed Policy for Lambda Functions
   CommonLambdaPolicy:
@@ -629,6 +634,9 @@ Resources:
       Timeout: 30
       Role: !GetAtt ServerlessDBLambdaCPUScalingRole.Arn
       CodeUri: cpu-scaler/
+      Environment:
+        Variables:
+          INSTANCE_TYPES: !Ref INSTANCE_TYPES_VARIABLE
       Events:
         SNSTrigger:
           Type: SNS
