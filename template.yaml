@@ -17,8 +17,8 @@ Parameters:
   MasterUserPasswordDB:
     NoEcho: true
     Type: String
-    Description: Master passwork for db instance
-    Default: xinchaothegioi123
+    Description: Master password for db instance
+    # Default: xinchaothegioi123
     MinLength: 1
 
   DBNameInit:
@@ -36,15 +36,15 @@ Parameters:
   PasswordsValkey1:
     NoEcho: true
     Type: String
-    Description: Passwork for Valkey Cache
-    Default: m@tkhauelasticache123
+    Description: Password for Valkey Cache
+    # Default: m@tkhauelasticache123
     MinLength: 1
 
   PasswordsValkey2:
     NoEcho: true
     Type: String
-    Description: Passwork for Valkey Cache 2
-    Default: m@tkhauelasticache456
+    Description: Password for Valkey Cache 2
+    # Default: m@tkhauelasticache456
     MinLength: 1
 
   UserGroupIdValkeyCache:
@@ -57,6 +57,12 @@ Parameters:
     Type: String
     Description: ServerlessCacheName for Valkey
     Default: ServerlessDBValkeyCache
+    MinLength: 1
+
+  ProxyName:
+    Type: String
+    Description: ProxyName for RDS
+    Default: ServerlessDBProxy
     MinLength: 1
 
 Resources:
@@ -259,22 +265,22 @@ Resources:
         - Key: Name
           Value: lambda-security-group
 
-  # ServerlessDBSecretsEndpointSecurityGroup:
-  #   Type: AWS::EC2::SecurityGroup
-  #   Properties:
-  #     GroupDescription: Security group for Secrets Manager Endpoint
-  #     VpcId: !Ref ServerlessDBVPC
-  #     SecurityGroupIngress:
-  #       - IpProtocol: tcp
-  #         FromPort: 443
-  #         ToPort: 443
-  #         SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
-  #     SecurityGroupEgress:
-  #       - IpProtocol: -1
-  #         CidrIp: 0.0.0.0/0
-  #     Tags:
-  #       - Key: Name
-  #         Value: Secret-Endpoint-SG
+  ServerlessDBEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for VPC Endpoints
+      VpcId: !Ref ServerlessDBVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Endpoint-SG
 
   ServerlessDBRDSProxySecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -289,34 +295,56 @@ Resources:
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
-        # 1. Cho phép đi tới RDS Proxy
-        - IpProtocol: tcp
-          FromPort: 3306
-          ToPort: 3306
-          DestinationSecurityGroupId: !Ref ServerlessDBRDSProxySecurityGroup
-        # 2. Cho phép đi tới ElastiCache
-        - IpProtocol: tcp
-          FromPort: 6379
-          ToPort: 6379
-          DestinationSecurityGroupId: !Ref ServerlessDBCacheSecurityGroup
+        # - IpProtocol: tcp
+        #   FromPort: 3306
+        #   ToPort: 3306
+        #   DestinationSecurityGroupId: !Ref ServerlessDBRDSSecurityGroup
       Tags:
         - Key: Name
           Value: rds-proxy-security-group
 
-  # # Secrets Manager Endpoint
-  # ServerlessDBSecretsManagerEndpoint:
-  #   Type: AWS::EC2::VPCEndpoint
-  #   Properties:
-  #     ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
-  #     VpcId: !Ref ServerlessDBVPC
-  #     SubnetIds:
-  #       - !Ref ServerlessDBPrivateSubnet1
-  #       - !Ref ServerlessDBPrivateSubnet2
-  #       - !Ref ServerlessDBPrivateSubnet3
-  #     SecurityGroupIds:
-  #       - !Ref ServerlessDBSecretsEndpointSecurityGroup
-  #     VpcEndpointType: Interface
-  #     PrivateDnsEnabled: true
+  # VPC Endpoints
+  ServerlessDBSecretsManagerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
+      VpcId: !Ref ServerlessDBVPC
+      SubnetIds:
+        - !Ref ServerlessDBPrivateSubnet1
+        - !Ref ServerlessDBPrivateSubnet2
+        - !Ref ServerlessDBPrivateSubnet3
+      SecurityGroupIds:
+        - !Ref ServerlessDBEndpointSecurityGroup
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+
+  ServerlessDBRDSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.rds
+      VpcId: !Ref ServerlessDBVPC
+      SubnetIds:
+        - !Ref ServerlessDBPrivateSubnet1
+        - !Ref ServerlessDBPrivateSubnet2
+        - !Ref ServerlessDBPrivateSubnet3
+      SecurityGroupIds:
+        - !Ref ServerlessDBEndpointSecurityGroup
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+
+  ServerlessDBLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcId: !Ref ServerlessDBVPC
+      SubnetIds:
+        - !Ref ServerlessDBPrivateSubnet1
+        - !Ref ServerlessDBPrivateSubnet2
+        - !Ref ServerlessDBPrivateSubnet3
+      SecurityGroupIds:
+        - !Ref ServerlessDBEndpointSecurityGroup
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
 
   # RDS Subnet Group
   ServerlessDBRDSSubnetGroup:
@@ -363,7 +391,7 @@ Resources:
     Properties:
       Name: rds-proxy-secret
       Description: Credentials for RDS database
-      SecretString: !Sub '{"username":"${MasterUsernameDB}","password":"${MasterUserPasswordDB}","host":"${ServerlessDBRDSInstance.Endpoint.Address}","port":3306,"dbname":"${DBNameInit}"}'
+      SecretString: !Sub '{"username":"${MasterUsernameDB}","password":"${MasterUserPasswordDB}","dbname":"${DBNameInit}"}'
       Tags:
         - Key: Name
           Value: ServerlessDBRDSSecret
@@ -509,14 +537,6 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref ServerlessDBRDSSecret
-              - Effect: Allow
-                Action: vpce:*
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - execute-api:Invoke
-                  - execute-api:ManageConnections
-                Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*
 
   ServerlessDBLambdaCPUScalingRole:
     Type: AWS::IAM::Role
@@ -577,7 +597,7 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       Dimensions:
         - Name: DBInstanceIdentifier
-          Value: rdsmysql
+          Value: !Ref DBInstanceIdentifierName
       AlarmActions:
         - !Ref ServerlessDBSNSTopic
 
@@ -595,7 +615,7 @@ Resources:
       ComparisonOperator: LessThanThreshold
       Dimensions:
         - Name: DBInstanceIdentifier
-          Value: rdsmysql
+          Value: !Ref DBInstanceIdentifierName
       AlarmActions:
         - !Ref ServerlessDBSNSTopic
 
@@ -609,13 +629,6 @@ Resources:
       Timeout: 30
       Role: !GetAtt ServerlessDBLambdaCPUScalingRole.Arn
       CodeUri: cpu-scaler/
-      # VpcConfig:
-      #   SubnetIds:
-      #     - !Ref ServerlessDBPrivateSubnet1
-      #     - !Ref ServerlessDBPrivateSubnet2
-      #     - !Ref ServerlessDBPrivateSubnet3
-      #   SecurityGroupIds:
-      #     - !Ref ServerlessDBLambdaSecurityGroup
       Events:
         SNSTrigger:
           Type: SNS
@@ -652,7 +665,6 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: !Ref UserNameValkey
@@ -687,7 +699,6 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: !Ref UserNameValkey
@@ -722,7 +733,6 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: !Ref UserNameValkey
@@ -767,7 +777,6 @@ Resources:
           - !Ref ServerlessDBLambdaSecurityGroup
       Environment:
         Variables:
-          # SECRET_ARN: !Ref ServerlessDBRDSSecret
           PROXY_ENDPOINT: !GetAtt ServerlessDBRDSProxy.Endpoint
           VALKEY_PRIMARY_ENDPOINT: !GetAtt ServerlessDBValkeyCache.Endpoint.Address
           VALKEY_USER_NAME: !Ref UserNameValkey
