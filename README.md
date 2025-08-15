@@ -188,7 +188,7 @@ Hoan nghênh contributions để cải thiện dự án:
 - [RDS Proxy](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html)
 - [ElastiCache](https://aws.amazon.com/elasticache/)
 - [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/)
-
+- [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html)
 ### Additional Resources
 
 - [AWS Training](https://aws.amazon.com/training/)
