@@ -1,4 +1,6 @@
 # Serverless Database Operations with AWS
+[![FCJ](https://img.shields.io/badge/FCJ-Internship-blue)](https://github.com/AWS-First-Cloud-Journey/Internship)
+[![AWS](https://img.shields.io/badge/AWS-Cloud-orange)](https://aws.amazon.com/)
 
 # Tổng quan dự án
 
