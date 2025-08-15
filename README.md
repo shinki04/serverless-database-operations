@@ -36,7 +36,7 @@ Dự án này phù hợp cho những người học AWS, muốn xây dựng ki�
 
 # Cấu trúc Repository
 
-```json
+```
 📦 serverless-database-operations/
 ├── 📁 layer/                         # Thư mục cho Lambda Layer
 │   └── 📁 python/
