@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "Serverless-DB-Operation"
+resolve_s3 = true
+s3_prefix = "Serverless-DB-Operation"
+region = "ap-southeast-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "DBInstanceIdentifierName=\"rdsmysql\" MasterUsernameDB=\"admin\" MasterUserPasswordDB=\"xinchaothegioi123\" DBNameInit=\"shopdemo\" UserNameValkey=\"valkey-user\" PasswordsValkey1=\"m@tkhauelasticache123\" PasswordsValkey2=\"m@tkhauelasticache456\" UserGroupIdValkeyCache=\"valkey-user-group\" ServerlessDBValkeyCacheName=\"ServerlessDBValkeyCache\" ProxyName=\"ServerlessDBProxy\" InstanceTypesVariable=\"db.t3.micro,db.t4g.micro,db.t4g.medium,db.m5.large\""
+image_repositories = []
