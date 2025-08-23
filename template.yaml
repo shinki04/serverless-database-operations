@@ -15,10 +15,10 @@ Parameters:
     Default: admin
 
   MasterUserPasswordDB:
-    NoEcho: true
+    # NoEcho: true
     Type: String
     Description: Master password for db instance
-    # Default: xinchaothegioi123
+    Default: xinchaothegioi123
     MinLength: 1
 
   DBNameInit:
@@ -34,17 +34,17 @@ Parameters:
     MinLength: 1
 
   PasswordsValkey1:
-    NoEcho: true
+    # NoEcho: true
     Type: String
     Description: Password for Valkey Cache
-    # Default: m@tkhauelasticache123
+    Default: m@tkhauelasticache123
     MinLength: 1
 
   PasswordsValkey2:
-    NoEcho: true
+    # NoEcho: true
     Type: String
     Description: Password for Valkey Cache 2
-    # Default: m@tkhauelasticache456
+    Default: m@tkhauelasticache456
     MinLength: 1
 
   UserGroupIdValkeyCache:
@@ -65,11 +65,11 @@ Parameters:
     Default: ServerlessDBProxy
     MinLength: 1
 
-  INSTANCE_TYPES_VARIABLE:
+  InstanceTypesVariable:
     Type: String
     Description: A list of allowed instance types, separated by commas.
-    default: db.t3.micro,db.t4g.micro,db.t4g.medium,db.m5.large 
-    
+    Default: db.t3.micro,db.t4g.micro,db.t4g.medium,db.m5.large
+
 Resources:
   # Common IAM Managed Policy for Lambda Functions
   CommonLambdaPolicy:
@@ -636,7 +636,7 @@ Resources:
       CodeUri: cpu-scaler/
       Environment:
         Variables:
-          INSTANCE_TYPES: !Ref INSTANCE_TYPES_VARIABLE
+          INSTANCE_TYPES: !Ref InstanceTypesVariable
       Events:
         SNSTrigger:
           Type: SNS
@@ -685,6 +685,8 @@ Resources:
           Properties:
             Path: /create-table
             Method: POST
+            Auth:
+              Authorizer: NONE
 
   # Lambda Function for Insert Bulk Orders
   ServerlessDBInsertBulkOrdersLambda:
@@ -719,6 +721,8 @@ Resources:
           Properties:
             Path: /insert-bulk
             Method: POST
+            Auth:
+              Authorizer: NONE
 
   # Lambda Function for CRUD Operations
   ServerlessDBCRUDOperationsLambda:
@@ -753,16 +757,22 @@ Resources:
           Properties:
             Path: /orders
             Method: GET
+            Auth:
+              Authorizer: NONE
         PostApi:
           Type: Api
           Properties:
             Path: /orders
             Method: POST
+            Auth:
+              Authorizer: NONE
         DeleteApi:
           Type: Api
           Properties:
             Path: /orders
             Method: DELETE
+            Auth:
+              Authorizer: NONE
 
   # Lambda Function for Query Operations
   ServerlessDBQueryOperationsLambda:
@@ -797,6 +807,8 @@ Resources:
           Properties:
             Path: /orders/query
             Method: GET
+            Auth:
+              Authorizer: NONE
 
 Outputs:
   ServerlessDBApiEndpoint:
