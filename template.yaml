@@ -70,7 +70,77 @@ Parameters:
     Description: A list of allowed instance types, separated by commas.
     Default: db.t3.micro,db.t4g.micro,db.t4g.medium,db.m5.large
 
+Globals:
+  Api:
+    AccessLogSetting:
+      DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+      Format: '{"requestId":"$context.requestId", "ip": "$context.identity.sourceIp", "requestTime":"$context.requestTime", "httpMethod":"$context.httpMethod", "resourcePath":"$context.resourcePath", "status":"$context.status", "protocol":"$context.protocol", "responseLength":"$context.responseLength"}'
+    Cors:
+      AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: "'*'" # WARNING: For development only
+    TracingEnabled: true
+    Auth:
+      DefaultAuthorizer: NONE
+  # Function:
+  #   Tracing: Active # Enable AWS X-Ray for all functions
+
 Resources:
+
+  ServerlessDBApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+
+  # API Gateway Access Log Group
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+
+  # CloudWatch Dashboard
+  ServerlessDBDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: ServerlessApplicationDashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${DBInstanceIdentifierName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS - CPU Utilization (%)" }
+            },
+            {
+              "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${DBInstanceIdentifierName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS - Database Connections" }
+            },
+            {
+              "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/RDS", "ClientConnections", "DBProxyName", "${ProxyName}"], ["AWS/RDS", "DatabaseConnections", "DBProxyName", "${ProxyName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS Proxy - Client vs DB Connections" }
+            },
+            {
+              "type": "metric", "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/RDS", "Queries", "DBProxyName", "${ProxyName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS Proxy - Queries" }
+            },
+            {
+              "type": "metric", "x": 0, "y": 12, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/ElastiCache", "CacheHits", "ServerlessCacheName", "${ServerlessDBValkeyCacheName}"], [".", "CacheMisses", ".", "."] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Valkey - Cache Hits vs Misses" }
+            },
+            {
+              "type": "metric", "x": 12, "y": 12, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/ElastiCache", "EngineCPUUtilization", "ServerlessCacheName", "${ServerlessDBValkeyCacheName}"], [".", "CurrConnections", ".", "."] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Valkey - CPU & Connections" }
+            },
+            {
+              "type": "metric", "x": 0, "y": 18, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/Lambda", "Invocations", "FunctionName", "${ServerlessDBCreateTableLambda}"], [".", ".", ".", "${ServerlessDBInsertBulkOrdersLambda}"], [".", ".", ".", "${ServerlessDBCRUDOperationsLambda}"], [".", ".", ".", "${ServerlessDBQueryOperationsLambda}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Lambda - Invocations (Sum)", "stat": "Sum" }
+            },
+            {
+              "type": "metric", "x": 12, "y": 18, "width": 12, "height": 6,
+              "properties": { "metrics": [ ["AWS/Lambda", "Errors", "FunctionName", "${ServerlessDBCreateTableLambda}"], [".", ".", ".", "${ServerlessDBInsertBulkOrdersLambda}"], [".", ".", ".", "${ServerlessDBCRUDOperationsLambda}"], [".", ".", ".", "${ServerlessDBQueryOperationsLambda}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Lambda - Errors (Sum)", "stat": "Sum" }
+            }
+          ]
+        }
+
   # Common IAM Managed Policy for Lambda Functions
   CommonLambdaPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -90,9 +160,6 @@ Resources:
               - ec2:CreateNetworkInterface
               - ec2:DeleteNetworkInterface
               - ec2:DescribeNetworkInterfaces
-              - ec2:DescribeSecurityGroups
-              - ec2:DescribeSubnets
-              - ec2:DescribeVpcs
             Resource: "*"
 
   # Lambda Layer for Python dependencies
@@ -234,9 +301,6 @@ Resources:
           FromPort: 3306
           ToPort: 3306
           SourceSecurityGroupId: !Ref ServerlessDBRDSProxySecurityGroup
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: rds-security-group
@@ -251,9 +315,6 @@ Resources:
           FromPort: 6379
           ToPort: 6379
           SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: cache-security-group
@@ -263,29 +324,23 @@ Resources:
     Properties:
       GroupDescription: Security group for Lambda
       VpcId: !Ref ServerlessDBVPC
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: lambda-security-group
 
-  ServerlessDBEndpointSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for VPC Endpoints
-      VpcId: !Ref ServerlessDBVPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: Endpoint-SG
+  # ServerlessDBEndpointSecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     GroupDescription: Security group for VPC Endpoints
+  #     VpcId: !Ref ServerlessDBVPC
+  #     SecurityGroupIngress:
+  #       - IpProtocol: tcp
+  #         FromPort: 443
+  #         ToPort: 443
+  #         SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
+  #     Tags:
+  #       - Key: Name
+  #         Value: Endpoint-SG
 
   ServerlessDBRDSProxySecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -297,59 +352,52 @@ Resources:
           FromPort: 3306
           ToPort: 3306
           SourceSecurityGroupId: !Ref ServerlessDBLambdaSecurityGroup
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-        # - IpProtocol: tcp
-        #   FromPort: 3306
-        #   ToPort: 3306
-        #   DestinationSecurityGroupId: !Ref ServerlessDBRDSSecurityGroup
       Tags:
         - Key: Name
           Value: rds-proxy-security-group
 
   # VPC Endpoints
-  ServerlessDBSecretsManagerEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
-      VpcId: !Ref ServerlessDBVPC
-      SubnetIds:
-        - !Ref ServerlessDBPrivateSubnet1
-        - !Ref ServerlessDBPrivateSubnet2
-        - !Ref ServerlessDBPrivateSubnet3
-      SecurityGroupIds:
-        - !Ref ServerlessDBEndpointSecurityGroup
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
+  # ServerlessDBSecretsManagerEndpoint:
+  #   Type: AWS::EC2::VPCEndpoint
+  #   Properties:
+  #     ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
+  #     VpcId: !Ref ServerlessDBVPC
+  #     SubnetIds:
+  #       - !Ref ServerlessDBPrivateSubnet1
+  #       - !Ref ServerlessDBPrivateSubnet2
+  #       - !Ref ServerlessDBPrivateSubnet3
+  #     SecurityGroupIds:
+  #       - !Ref ServerlessDBEndpointSecurityGroup
+  #     VpcEndpointType: Interface
+  #     PrivateDnsEnabled: true
 
-  ServerlessDBRDSEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.rds
-      VpcId: !Ref ServerlessDBVPC
-      SubnetIds:
-        - !Ref ServerlessDBPrivateSubnet1
-        - !Ref ServerlessDBPrivateSubnet2
-        - !Ref ServerlessDBPrivateSubnet3
-      SecurityGroupIds:
-        - !Ref ServerlessDBEndpointSecurityGroup
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
+  # ServerlessDBRDSEndpoint:
+  #   Type: AWS::EC2::VPCEndpoint
+  #   Properties:
+  #     ServiceName: !Sub com.amazonaws.${AWS::Region}.rds
+  #     VpcId: !Ref ServerlessDBVPC
+  #     SubnetIds:
+  #       - !Ref ServerlessDBPrivateSubnet1
+  #       - !Ref ServerlessDBPrivateSubnet2
+  #       - !Ref ServerlessDBPrivateSubnet3
+  #     SecurityGroupIds:
+  #       - !Ref ServerlessDBEndpointSecurityGroup
+  #     VpcEndpointType: Interface
+  #     PrivateDnsEnabled: true
 
-  ServerlessDBLogsEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
-      VpcId: !Ref ServerlessDBVPC
-      SubnetIds:
-        - !Ref ServerlessDBPrivateSubnet1
-        - !Ref ServerlessDBPrivateSubnet2
-        - !Ref ServerlessDBPrivateSubnet3
-      SecurityGroupIds:
-        - !Ref ServerlessDBEndpointSecurityGroup
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
+  # ServerlessDBLogsEndpoint:
+  #   Type: AWS::EC2::VPCEndpoint
+  #   Properties:
+  #     ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+  #     VpcId: !Ref ServerlessDBVPC
+  #     SubnetIds:
+  #       - !Ref ServerlessDBPrivateSubnet1
+  #       - !Ref ServerlessDBPrivateSubnet2
+  #       - !Ref ServerlessDBPrivateSubnet3
+  #     SecurityGroupIds:
+  #       - !Ref ServerlessDBEndpointSecurityGroup
+  #     VpcEndpointType: Interface
+  #     PrivateDnsEnabled: true
 
   # RDS Subnet Group
   ServerlessDBRDSSubnetGroup:
@@ -371,10 +419,10 @@ Resources:
     Properties:
       DBInstanceIdentifier: !Ref DBInstanceIdentifierName
       Engine: mysql
-      EngineVersion: 8.0.42
-      DBInstanceClass: db.t3.micro
-      AllocatedStorage: 20
-      StorageType: gp3
+      EngineVersion: "8.0"
+      DBInstanceClass: "db.t3.small"
+      AllocatedStorage: "20"
+      StorageType: "gp3"
       MaxAllocatedStorage: 1000
       MasterUsername: !Ref MasterUsernameDB
       MasterUserPassword: !Ref MasterUserPasswordDB
@@ -685,8 +733,8 @@ Resources:
           Properties:
             Path: /create-table
             Method: POST
-            Auth:
-              Authorizer: NONE
+            RestApiId: !Ref ServerlessDBApi
+          
 
   # Lambda Function for Insert Bulk Orders
   ServerlessDBInsertBulkOrdersLambda:
@@ -721,8 +769,7 @@ Resources:
           Properties:
             Path: /insert-bulk
             Method: POST
-            Auth:
-              Authorizer: NONE
+            RestApiId: !Ref ServerlessDBApi
 
   # Lambda Function for CRUD Operations
   ServerlessDBCRUDOperationsLambda:
@@ -757,22 +804,19 @@ Resources:
           Properties:
             Path: /orders
             Method: GET
-            Auth:
-              Authorizer: NONE
+            RestApiId: !Ref ServerlessDBApi
         PostApi:
           Type: Api
           Properties:
             Path: /orders
             Method: POST
-            Auth:
-              Authorizer: NONE
+            RestApiId: !Ref ServerlessDBApi
         DeleteApi:
           Type: Api
           Properties:
             Path: /orders
             Method: DELETE
-            Auth:
-              Authorizer: NONE
+            RestApiId: !Ref ServerlessDBApi
 
   # Lambda Function for Query Operations
   ServerlessDBQueryOperationsLambda:
@@ -807,13 +851,12 @@ Resources:
           Properties:
             Path: /orders/query
             Method: GET
-            Auth:
-              Authorizer: NONE
+            RestApiId: !Ref ServerlessDBApi
 
 Outputs:
   ServerlessDBApiEndpoint:
     Description: API Gateway endpoint URL
-    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
+    Value: !Sub https://${ServerlessDBApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
   ServerlessDBRDSEndpoint:
     Description: RDS Instance Endpoint
     Value: !GetAtt ServerlessDBRDSInstance.Endpoint.Address
