@@ -81,7 +81,8 @@ cd serverless-database-operations
 pip install -t layer/python/lib/python3.11/site-packages/ requests mysql-connector-python redis
 
 # Hoặc sử dụng requirements.txt
-pip install -t layer/python/lib/python3.11/site-packages/ -r requirements.txt
+pip install -t layer/python/lib/python3.11/site-packages/ -r layer/requirements.txt
+
 ```
 
 Lưu ý:
