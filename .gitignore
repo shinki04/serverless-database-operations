@@ -1,3 +1,6 @@
 .aws-sam
 layer/python/*
 .venv
+
+# By myself
+test.yaml

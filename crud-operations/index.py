@@ -28,6 +28,7 @@ except redis.RedisError as e:
 cached_token = None
 token_expiry = 0
 
+
 def get_db_token():
     global cached_token, token_expiry
     current_time = time.time()
@@ -74,6 +75,7 @@ def get_db_connection():
     except Exception as e:
         logger.error(f"Error creating database connection: {str(e)}")
         raise
+
 
 def view_orders(page, page_size):
     start_time = time.time()
@@ -138,6 +140,7 @@ def view_orders(page, page_size):
             conn.close()
             logger.info("Database connection closed")
 
+
 def insert_order(customer_id, order_date, total_amount, status, shipping_address):
     start_time = time.time()
     order_id = str(uuid.uuid4())
@@ -155,7 +158,8 @@ def insert_order(customer_id, order_date, total_amount, status, shipping_address
         cursor.execute(
             "INSERT INTO orders (order_id, customer_id, order_date, total_amount, status, shipping_address) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
-            (order_id, customer_id, order_date, total_amount, status, shipping_address)
+            (order_id, customer_id, order_date,
+             total_amount, status, shipping_address)
         )
         conn.commit()
 
@@ -182,7 +186,8 @@ def insert_order(customer_id, order_date, total_amount, status, shipping_address
             conn.close()
             logger.info("Database connection closed")
 
-def update_order(order_id, order_date, total_amount, status, shipping_address):
+
+def update_order(order_id, order_date, customer_id, total_amount, status, shipping_address):
     start_time = time.time()
     if not all([order_id, order_date]):
         return {
@@ -195,6 +200,9 @@ def update_order(order_id, order_date, total_amount, status, shipping_address):
     params = []
     updates = []
 
+    if customer_id is not None:
+        updates.append(" customer_id = %s")
+        params.append(customer_id)
     if total_amount is not None:
         updates.append(" total_amount = %s")
         params.append(total_amount)
@@ -260,6 +268,7 @@ def update_order(order_id, order_date, total_amount, status, shipping_address):
             conn.close()
             logger.info("Database connection closed")
 
+
 def delete_order(order_id, order_date):
     start_time = time.time()
     if not order_id or not order_date:
@@ -317,13 +326,15 @@ def delete_order(order_id, order_date):
             conn.close()
             logger.info("Database connection closed")
 
+
 def lambda_handler(event, context):
     logger.info(f"Received event: {json.dumps(event, default=str)}")
     try:
         http_method = event.get('httpMethod', '')
         path_params = event.get('pathParameters', {}) or {}
         query_params = event.get('queryStringParameters', {}) or {}
-        body = {} if event.get('body') is None else json.loads(event.get('body', '{}'))
+        body = {} if event.get('body') is None else json.loads(
+            event.get('body', '{}'))
 
         if http_method == 'GET':
             try:
@@ -344,8 +355,10 @@ def lambda_handler(event, context):
             shipping_address = body.get('shipping_address')
             return insert_order(customer_id, order_date, total_amount, status, shipping_address)
         elif http_method == 'DELETE':
-            order_id = path_params.get('order_id') or query_params.get('order_id') or body.get('order_id')
-            order_date = path_params.get('order_date') or query_params.get('order_date') or body.get('order_date')
+            order_id = path_params.get('order_id') or query_params.get(
+                'order_id') or body.get('order_id')
+            order_date = path_params.get('order_date') or query_params.get(
+                'order_date') or body.get('order_date')
             if not order_id or not order_date:
                 return {
                     'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
@@ -353,6 +366,22 @@ def lambda_handler(event, context):
                     'body': json.dumps({'error': 'Missing order_id or order_date'})
                 }
             return delete_order(order_id, order_date)
+        elif http_method == 'PUT':
+            order_id = path_params.get('order_id') or query_params.get(
+                'order_id') or body.get('order_id')
+            order_date = path_params.get('order_date') or query_params.get(
+                'order_date') or body.get('order_date')
+            if not order_id or not order_date:
+                return {
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Missing order_id or order_date'})
+                }
+            customer_id = body.get('customer_id')
+            total_amount = body.get('total_amount')
+            status = body.get('status')
+            shipping_address = body.get('shipping_address')
+            return update_order(order_id, order_date, customer_id, total_amount, status, shipping_address)
         else:
             return {
                 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
@@ -360,7 +389,8 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': f'Method {http_method} not allowed'})
             }
     except Exception as e:
-        logger.error(f"Unexpected error in lambda_handler: {str(e)}", exc_info=True)
+        logger.error(
+            f"Unexpected error in lambda_handler: {str(e)}", exc_info=True)
         return {
             'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
             'statusCode': 500,

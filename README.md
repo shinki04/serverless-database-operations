@@ -199,6 +199,6 @@ Hoan nghênh contributions để cải thiện dự án:
 
 ---
 
-*Cập nhật lần cuối: 2025-08-15*
+*Cập nhật lần cuối: 2025-09-01*
 
-*Phiên bản: 1.0.0*
+*Phiên bản: 1.1.0*

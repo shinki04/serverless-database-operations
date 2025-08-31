@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: Serverless Database Operations with RDS Proxy, Lambda, ElastiCache, and Lambda Layer
-
 Parameters:
   DBInstanceIdentifierName:
     Type: String
@@ -56,13 +55,13 @@ Parameters:
   ServerlessDBValkeyCacheName:
     Type: String
     Description: ServerlessCacheName for Valkey
-    Default: ServerlessDBValkeyCache
+    Default: serverlessdbvalkeycache
     MinLength: 1
 
   ProxyName:
     Type: String
     Description: ProxyName for RDS
-    Default: ServerlessDBProxy
+    Default: serverlessdbproxy
     MinLength: 1
 
   InstanceTypesVariable:
@@ -86,7 +85,6 @@ Globals:
   #   Tracing: Active # Enable AWS X-Ray for all functions
 
 Resources:
-
   ServerlessDBApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -99,6 +97,7 @@ Resources:
       RetentionInDays: 7
 
   # CloudWatch Dashboard
+
   ServerlessDBDashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
@@ -106,38 +105,149 @@ Resources:
       DashboardBody: !Sub |
         {
           "widgets": [
-            {
-              "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${DBInstanceIdentifierName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS - CPU Utilization (%)" }
-            },
-            {
-              "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${DBInstanceIdentifierName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS - Database Connections" }
-            },
-            {
-              "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/RDS", "ClientConnections", "DBProxyName", "${ProxyName}"], ["AWS/RDS", "DatabaseConnections", "DBProxyName", "${ProxyName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS Proxy - Client vs DB Connections" }
-            },
-            {
-              "type": "metric", "x": 12, "y": 6, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/RDS", "Queries", "DBProxyName", "${ProxyName}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "RDS Proxy - Queries" }
-            },
-            {
-              "type": "metric", "x": 0, "y": 12, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/ElastiCache", "CacheHits", "ServerlessCacheName", "${ServerlessDBValkeyCacheName}"], [".", "CacheMisses", ".", "."] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Valkey - Cache Hits vs Misses" }
-            },
-            {
-              "type": "metric", "x": 12, "y": 12, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/ElastiCache", "EngineCPUUtilization", "ServerlessCacheName", "${ServerlessDBValkeyCacheName}"], [".", "CurrConnections", ".", "."] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Valkey - CPU & Connections" }
-            },
-            {
-              "type": "metric", "x": 0, "y": 18, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/Lambda", "Invocations", "FunctionName", "${ServerlessDBCreateTableLambda}"], [".", ".", ".", "${ServerlessDBInsertBulkOrdersLambda}"], [".", ".", ".", "${ServerlessDBCRUDOperationsLambda}"], [".", ".", ".", "${ServerlessDBQueryOperationsLambda}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Lambda - Invocations (Sum)", "stat": "Sum" }
-            },
-            {
-              "type": "metric", "x": 12, "y": 18, "width": 12, "height": 6,
-              "properties": { "metrics": [ ["AWS/Lambda", "Errors", "FunctionName", "${ServerlessDBCreateTableLambda}"], [".", ".", ".", "${ServerlessDBInsertBulkOrdersLambda}"], [".", ".", ".", "${ServerlessDBCRUDOperationsLambda}"], [".", ".", ".", "${ServerlessDBQueryOperationsLambda}"] ], "view": "timeSeries", "region": "${AWS::Region}", "title": "Lambda - Errors (Sum)", "stat": "Sum" }
-            }
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 0,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${DBInstanceIdentifierName}" ]
+                      ],
+                      "view": "timeSeries",
+                      "region": "${AWS::Region}",
+                      "title": "RDS - CPU Utilization (%)"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 0,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${DBInstanceIdentifierName}", { "region": "${AWS::Region}" } ]
+                      ],
+                      "view": "timeSeries",
+                      "region": "${AWS::Region}",
+                      "title": "RDS - Database Connections",
+                      "period": 300
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 12,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/Lambda", "Invocations", "FunctionName", "${ServerlessDBCreateTableLambda}" ],
+                          [ ".", ".", ".", "${ServerlessDBInsertBulkOrdersLambda}" ],
+                          [ ".", ".", ".", "${ServerlessDBCRUDOperationsLambda}" ],
+                          [ ".", ".", ".", "${ServerlessDBQueryOperationsLambda}" ]
+                      ],
+                      "view": "timeSeries",
+                      "region": "${AWS::Region}",
+                      "title": "Lambda - Invocations (Sum)",
+                      "stat": "Sum"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/Lambda", "Errors", "FunctionName", "${ServerlessDBCreateTableLambda}" ],
+                          [ ".", ".", ".", "${ServerlessDBInsertBulkOrdersLambda}" ],
+                          [ ".", ".", ".", "${ServerlessDBCRUDOperationsLambda}" ],
+                          [ ".", ".", ".", "${ServerlessDBQueryOperationsLambda}" ]
+                      ],
+                      "view": "timeSeries",
+                      "region": "${AWS::Region}",
+                      "title": "Lambda - Errors (Sum)",
+                      "stat": "Sum"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/RDS", "DatabaseConnections", "TargetRole", "READWRITE", "ProxyName", "${ProxyName}", "TargetGroup", "default", { "region": "${AWS::Region}", "visible": false } ],
+                          [ "AWS/RDS", "DatabaseConnections", "ProxyName", "${ProxyName}", { "region": "${AWS::Region}" } ],
+                          [ "AWS/RDS", "QueryRequests", "ProxyName", "${ProxyName}", { "region": "${AWS::Region}" } ]
+                      ],
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "region": "${AWS::Region}",
+                      "period": 60,
+                      "stat": "Average",
+                      "title": "RDS Proxy - Query Request vs DB Connections"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 18,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/ElastiCache", "CacheMisses", "clusterId", "${ServerlessDBValkeyCacheName}" ],
+                          [ ".", "CacheHits", ".", "." ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "Valkey - Cache Hits vs Misses"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 12,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/ElastiCache", "CurrConnections", "clusterId", "${ServerlessDBValkeyCacheName}", { "region": "${AWS::Region}" } ],
+                          [ ".", "NewConnections", ".", ".", { "region": "${AWS::Region}" } ],
+                          [ ".", "ElastiCacheProcessingUnits", ".", "." ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "Valkey - CPU & Connections",
+                      "period": 300
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 18,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/ElastiCache", "Evictions", "clusterId", "${ServerlessDBValkeyCacheName}", { "region": "${AWS::Region}" } ],
+                          [ ".", "ThrottledCmds", ".", "." ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "Valkey - Evictions & Throttled",
+                      "period": 300
+                  }
+              }
           ]
         }
 
@@ -734,7 +844,6 @@ Resources:
             Path: /create-table
             Method: POST
             RestApiId: !Ref ServerlessDBApi
-          
 
   # Lambda Function for Insert Bulk Orders
   ServerlessDBInsertBulkOrdersLambda:
@@ -810,6 +919,12 @@ Resources:
           Properties:
             Path: /orders
             Method: POST
+            RestApiId: !Ref ServerlessDBApi
+        PutApi:
+          Type: Api
+          Properties:
+            Path: /orders
+            Method: PUT
             RestApiId: !Ref ServerlessDBApi
         DeleteApi:
           Type: Api
